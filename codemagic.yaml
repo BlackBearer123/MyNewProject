@@ -1,209 +1,40 @@
 workflows:
   react-native-android:
     name: React Native Android
-
     max_build_duration: 120
-
-    instance_type: mac_mini_m2
-
+    instance_type: mac_mini
     environment:
-      android_signing:
-        - keystore_reference
-
-      groups:
-        - google_play
-
       vars:
-        PACKAGE_NAME: "io.codemagic.sample.reactnative"
-
+        PACKAGE_NAME: "com.mainapp" # <-- Put your package name here e.g. com.domain.myapp
+        CM_KEYSTORE: Encrypted(Z0FBQUFBQmhKa0pmNjVGcks0SUJvOWRYZ1FaUC1qTTRTZHlZNU4yQUNBNjNTSjhQRUtMTkdsNVJ0NnU4NW9xTVVqV0RhQl9CbVdlTE4yeUxqOTg4UFd2eEtFdDUtUnhfcnc9PQ==) # <-- Put your encrypted keystore file here
+        CM_KEYSTORE_PASSWORD: Encrypted(Z0FBQUFBQmhKa0ozd3UtQ3I2QjdSeUg0eVVVUXNkb05yTWRkUG90SmdseHJOZ2tBdVBUaUVHeHdiMzFIWXhYeElsclJqdHpvd0tELTRTNU5fRUJUVGJjVkY4clU4UTNTU0E9PQ==) # <-- Put your encrypted keystore password here
+        CM_KEY_ALIAS_PASSWORD: Encrypted(Z0FBQUFBQmhKa0ozd3UtQ3I2QjdSeUg0eVVVUXNkb05yTWRkUG90SmdseHJOZ2tBdVBUaUVHeHdiMzFIWXhYeElsclJqdHpvd0tELTRTNU5fRUJUVGJjVkY4clU4UTNTU0E9PQ==) # <-- Put your encrypted keystore alias password here
+        CM_KEY_ALIAS_USERNAME: Encrypted(Z0FBQUFBQmhKa0tWVFVJbVFOSkZpaC1XS3B3cjdGLW1BbFhKR0N4N21ObzRoaVNhaXFlQmtraVZHN2Y4djVSX0k0Vk5QMHV0Z2xVbEhjeTNMdDZxU2taUHJUN2g1dkdzUUE9PQ==) # <-- Put your encrypted keystore alias username here
+      node: latest
     scripts:
+      - name: Install npm dependencies
+        script: |
+          npm install
       - name: Set Android SDK location
-
         script: |
-
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
-
-      - name: Install npm dependencies
-
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$FCI_BUILD_DIR/android/local.properties"
+      - name: Set up keystore
         script: |
-
-          npm install
-
-      - name: Run Expo Prebuild
-
-        script: |
-
-          npx expo prebuild
-
-      - name: Set up app/build.gradle
-
-        script: |
-
-          mv ./support-files/build.gradle android/app
-
+          echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
+          cat >> "$FCI_BUILD_DIR/android/key.properties" <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_ALIAS_PASSWORD
+          keyAlias=$CM_KEY_ALIAS_USERNAME
+          storeFile=/tmp/keystore.keystore
+          EOF
+      - name: Tests # Insert before the build command
+        script: npm test
       - name: Build Android release
-
         script: |
-
-          LATEST_GOOGLE_PLAY_BUILD_NUMBER=$(google-play get-latest-build-number --package-name "$PACKAGE_NAME")
-
-          if [ -z $LATEST_GOOGLE_PLAY_BUILD_NUMBER ]; then
-
-              # fallback in case no build number was found from google play. Alternatively, you can `exit 1` to fail the build
-
-              UPDATED_BUILD_NUMBER=$BUILD_NUMBER
-
-          else
-
-              UPDATED_BUILD_NUMBER=$(($LATEST_GOOGLE_PLAY_BUILD_NUMBER + 1))
-
-          fi
-
-          cd android
-
-          ./gradlew bundleRelease \
-
-            -PversionCode=$UPDATED_BUILD_NUMBER \
-
-            -PversionName=1.0.$UPDATED_BUILD_NUMBER
-
+          # Set environment variable so it can be used to increment build number in android/app/build.gradle
+          # Note that tracks can be specified when retrieving latest build number from Google Play, for example:
+          # export NEW_BUILD_NUMBER=$(($(google-play get-latest-build-number --package-name "$PACKAGE_NAME" --tracks=alpha) + 1))
+          # export NEW_BUILD_NUMBER=$(($(google-play get-latest-build-number --package-name "$PACKAGE_NAME") + 1))
+          cd android && chmod +x gradlew && ./gradlew assembleRelease
     artifacts:
-      - android/app/build/outputs/**/*.aab
-
-    publishing:
-      email:
-        recipients:
-          - user_1@example.com
-
-          - user_2@example.com
-
-        notify:
-          success: true
-
-          failure: false
-
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-
-        track: internal
-
-        submit_as_draft: true
-
-  react-native-ios:
-    name: React Native iOS
-
-    max_build_duration: 120
-
-    instance_type: mac_mini_m2
-
-    integrations:
-      app_store_connect: codemagic
-
-    environment:
-      ios_signing:
-        distribution_type: app_store
-
-        bundle_identifier: io.codemagic.sample.reactnative
-
-      vars:
-        BUNDLE_ID: "io.codemagic.sample.reactnative"
-
-        XCODE_WORKSPACE: "CodemagicSample.xcworkspace" # <-- Put the name of your Xcode workspace here
-
-        XCODE_SCHEME: "CodemagicSample" # <-- Put the name of your Xcode scheme here
-
-        APP_STORE_APPLE_ID: 1555555551
-
-    scripts:
-      - name: Install npm dependencies
-
-        script: |
-
-          npm install
-
-      - name: Run Expo Prebuild
-
-        script: |
-
-          npx expo prebuild
-
-      - name: Set Info.plist values
-
-        script: |
-
-          PLIST=$CM_BUILD_DIR/$XCODE_SCHEME/Info.plist
-
-          PLIST_BUDDY=/usr/libexec/PlistBuddy
-
-          $PLIST_BUDDY -c "Add :ITSAppUsesNonExemptEncryption bool false" $PLIST
-
-      - name: Install CocoaPods dependencies
-
-        script: |
-
-          cd ios && pod install
-
-      - name: Set up provisioning profiles settings on Xcode project
-
-        script: xcode-project use-profiles
-
-      - name: Increment build number
-
-        script: |
-
-          cd $CM_BUILD_DIR/ios
-
-          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID")
-
-          agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
-
-      - name: Build ipa for distribution
-
-        script: |
-
-          xcode-project build-ipa \
-
-            --workspace "$CM_BUILD_DIR/ios/$XCODE_WORKSPACE" \
-
-            --scheme "$XCODE_SCHEME"
-
-    artifacts:
-      - build/ios/ipa/*.ipa
-
-      - /tmp/xcodebuild_logs/*.log
-
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
-
-    publishing:
-      email:
-        recipients:
-          - user_1@example.com
-
-          - user_2@example.com
-
-        notify:
-          success: true
-
-          failure: false
-
-      app_store_connect:
-        auth: integration
-
-        # Configuration related to TestFlight (optional)
-
-        # Note: This action is performed during post-processing.
-
-        submit_to_testflight: true
-
-        beta_groups: # Specify the names of beta tester groups that will get access to the build once it has passed beta review.
-          - group name 1
-
-          - group name 2
-
-        # Configuration related to App Store (optional)
-
-        # Note: This action is performed during post-processing.
-
-        submit_to_app_store: false
+      - android/app/build/outputs/codemagic/jesttest.apk
