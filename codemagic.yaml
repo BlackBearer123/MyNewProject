@@ -1,0 +1,24 @@
+version: 1.0.0
+name: react-native-build
+workflows:
+  build:
+    name: Build Android APK
+    max_build_duration: 60
+    triggers:
+      - git:
+          branches:
+            include:
+              - master
+    environment:
+      vars:
+        NODE_VERSION: "16.0.0"
+      flutter: stable
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install
+      - name: Build APK
+        script: |
+          npm run build:android  # or the build command you use to build APK
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk # Path to your APK
